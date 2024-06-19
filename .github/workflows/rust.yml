@@ -12,10 +12,14 @@ env:
 jobs:
   build:
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.type.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        type: 
+        - os: ubuntu-latest
+          binary-name: dhbw_electrolyzer_rs
+        - os: windows-latest
+          binary-name: dhbw_electrolyzer_rs.exe
 
     steps:
     - uses: actions/checkout@v4
@@ -26,5 +30,5 @@ jobs:
     - name: Upload binary
       uses: actions/upload-artifact@v4
       with:
-        name: build-artifacts-${{ matrix.os }}
-        path: target/release/dhbw_electrolyzer_rs.*
+        name: build-artifacts-${{ matrix.type.os }}-${{ matrix.type.binary-name }}
+        path: target/release/${{ matrix.type.binary-name }}
