@@ -144,6 +144,7 @@ pub fn connect(addr: SocketAddr) -> Result<Context, std::io::Error> {
 impl ModbusConnexion for ModbusDevice {
     // read input registers by address
     fn read_raw_input_registers(&mut self, addr: Address, nb: Quantity) -> Result<Vec<u16>, Error> {
+        println!("read register {addr} x{nb}");
         self.ctx.read_input_registers(addr, nb)
     }
 
@@ -180,7 +181,9 @@ impl ModbusConnexion for ModbusDevice {
 
         for (i, r) in regs.iter().enumerate() {
             // if the range is greater than the max request size we read this batch
-            if r.addr - regs[reg_range_start].addr > MODBUS_MAX_READ_LEN {
+            if r.addr - regs[reg_range_start].addr > MODBUS_MAX_READ_LEN
+                || r.addr != regs[reg_range_end].addr + regs[reg_range_end].len
+            {
                 let s_reg = &regs[reg_range_start];
                 let e_reg = &regs[reg_range_end];
 

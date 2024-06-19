@@ -1,4 +1,5 @@
 mod modbus_device;
+use std::env;
 use std::fs::File;
 
 use modbus_device::ModbusConnexion;
@@ -10,9 +11,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
     let mut now = Instant::now();
 
+    let args: Vec<String> = env::args().collect();
+
     let electrolyzer_input_registers_json = File::open("input_registers.json")?;
     let mut electrolyzer = ModbusDevice {
-        ctx: modbus_device::connect("192.168.0.2:502".parse()?)?,
+        ctx: modbus_device::connect(args[1].parse()?)?,
         input_registers: modbus_device::get_defs_from_json(electrolyzer_input_registers_json)?,
     };
 
