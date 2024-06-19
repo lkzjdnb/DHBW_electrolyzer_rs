@@ -186,8 +186,9 @@ impl ModbusConnexion for ModbusDevice {
 
                 // Read the values
                 println!(
-                    "reading range {0}:{1}:{2}:{3}:{4}",
-                    s_reg.addr, e_reg.addr, e_reg.len, s_reg.addr, r.addr
+                    "reading range {0}:{1}",
+                    s_reg.addr,
+                    e_reg.addr + e_reg.len - s_reg.addr
                 );
                 let read_regs: Vec<u16> =
                     self.read_raw_input_registers(s_reg.addr, e_reg.addr + e_reg.len - s_reg.addr)?;
