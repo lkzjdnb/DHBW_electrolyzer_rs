@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let electrolyzer_input_registers_json = File::open("input_registers.json")?;
     let mut electrolyzer = ModbusDevice {
-        ctx: modbus_device::connect("127.0.0.1:4502".parse()?)?,
+        ctx: modbus_device::connect("192.168.0.2:502".parse()?)?,
         input_registers: modbus_device::get_defs_from_json(electrolyzer_input_registers_json)?,
     };
 
