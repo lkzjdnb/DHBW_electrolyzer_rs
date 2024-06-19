@@ -26,5 +26,5 @@ jobs:
     - name: Upload binary
       uses: actions/upload-artifact@v4
       with:
-        name: build-artifacts
-        path: target/release/dhbw_electrolyzer_rs
+        name: build-artifacts-${{ matrix.os }}
+        path: target/release/dhbw_electrolyzer_rs.*
