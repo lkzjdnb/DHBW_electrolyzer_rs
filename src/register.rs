@@ -1,10 +1,24 @@
 use std::fmt::Debug;
 
+#[derive(Debug, Copy, Clone)]
+pub enum DataType {
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt128,
+    Int32,
+    Enum16,
+    Sized,
+    Float32,
+    Boolean,
+}
+
+#[derive(Clone)]
 pub struct Register {
     pub name: String,
     pub addr: u16,
-    pub len: u16,
-    pub data_type: String,
+    pub len: u16, // in 16bits
+    pub data_type: DataType,
 }
 
 impl Debug for Register {
