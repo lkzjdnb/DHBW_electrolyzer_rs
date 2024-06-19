@@ -179,7 +179,8 @@ impl ModbusConnexion for ModbusDevice {
 
         let mut result: HashMap<String, RegisterValue> = HashMap::new();
 
-        for (i, r) in regs.iter().enumerate() {
+        for (mut i, r) in regs.iter().skip(1).enumerate() {
+            i = i + 1;
             // if the range is greater than the max request size we read this batch
             if r.addr - regs[reg_range_start].addr > MODBUS_MAX_READ_LEN
                 || r.addr != regs[reg_range_end].addr + regs[reg_range_end].len
