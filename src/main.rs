@@ -21,13 +21,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("{0:?}", electrolyzer.input_registers);
 
-    now = Instant::now();
-    let register_vals = electrolyzer.dump_input_registers();
-    let time_to_read = now.elapsed();
+    loop {
+        now = Instant::now();
+        let register_vals = electrolyzer.dump_input_registers();
+        let time_to_read = now.elapsed();
 
-    println!("Time ro read all input registers : {0:?}", time_to_read);
+        println!("Time ro read all input registers : {0:?}", time_to_read);
 
-    println!("{0:?}", register_vals);
+        println!("{0:?}", register_vals);
+    }
 
-    return Ok(());
+    // return Ok(());
 }
