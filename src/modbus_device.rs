@@ -79,7 +79,12 @@ impl Into<register::DataType> for DataType {
 
 impl From<(Vec<u16>, register::DataType)> for RegisterValue {
     fn from((raw, kind): (Vec<u16>, register::DataType)) -> Self {
-        let raw_b: Vec<u8> = raw.iter().map(|v| v.to_le_bytes()).flatten().collect();
+        let raw_b: Vec<u8> = raw
+            .iter()
+            .map(|v| v.to_be_bytes())
+            .flatten()
+            .rev()
+            .collect();
         match kind {
             register::DataType::UInt16 => RegisterValue::U16(raw[0]),
             register::DataType::UInt32 => {
