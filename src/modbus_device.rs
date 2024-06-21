@@ -189,6 +189,7 @@ impl ModbusConnexion for ModbusDevice {
             // if the range is greater than the max request size we read this batch
             if r.addr - regs[reg_range_start].addr > MODBUS_MAX_READ_LEN
                 || r.addr != regs[reg_range_end].addr + regs[reg_range_end].len
+                || i == regs.len() - 1
             {
                 let s_reg = &regs[reg_range_start];
                 let e_reg = &regs[reg_range_end];
