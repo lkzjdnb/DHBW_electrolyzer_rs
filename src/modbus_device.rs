@@ -32,7 +32,7 @@ pub trait ModbusConnexion {
     fn dump_input_registers(&mut self) -> Result<HashMap<String, RegisterValue>, Error>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum RegisterValue {
     U16(u16),
     U32(u32),
