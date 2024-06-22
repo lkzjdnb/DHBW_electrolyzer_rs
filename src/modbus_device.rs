@@ -1,3 +1,4 @@
+use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
@@ -149,7 +150,7 @@ pub fn connect(addr: SocketAddr) -> Result<Context, std::io::Error> {
 impl ModbusConnexion for ModbusDevice {
     // read input registers by address
     fn read_raw_input_registers(&mut self, addr: Address, nb: Quantity) -> Result<Vec<u16>, Error> {
-        println!("read register {addr} x{nb}");
+        debug!("read register {addr} x{nb}");
         self.ctx.read_input_registers(addr, nb)
     }
 
@@ -163,7 +164,7 @@ impl ModbusConnexion for ModbusDevice {
             .filter_map(|n| match self.input_registers.get(n) {
                 Some(reg) => Some(reg.to_owned()),
                 None => {
-                    eprintln!("Register {n} does not exist, skipping it");
+                    warn!("Register {n} does not exist, skipping it");
                     None
                 }
             })
@@ -195,7 +196,7 @@ impl ModbusConnexion for ModbusDevice {
                 let e_reg = &regs[reg_range_end];
 
                 // Read the values
-                println!(
+                debug!(
                     "reading range {0}:{1}",
                     s_reg.addr,
                     e_reg.addr + e_reg.len - s_reg.addr
