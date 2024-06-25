@@ -206,7 +206,7 @@ impl ModbusConnexion for ModbusDevice {
 
                 // convert them to the types and make the association with the registers
                 let read_regs_map: HashMap<String, RegisterValue> = regs
-                    [reg_range_start..reg_range_end]
+                    [reg_range_start..reg_range_end + 1]
                     .iter()
                     .map(|v| {
                         let start_off = v.addr - s_reg.addr;

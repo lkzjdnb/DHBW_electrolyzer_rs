@@ -70,21 +70,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         info!("Time ro read all input registers : {0:?}", time_to_read);
 
+        now = Instant::now();
         let mut write_query =
-            Timestamp::from(chrono::offset::Local::now()).into_query("input_registers");
+            Timestamp::from(chrono::offset::Local::now()).into_query("electrolyzer");
 
         for (name, reg) in &register_vals {
             debug!("sending {name} {reg:?}");
             write_query = write_query.add_field(name, reg);
         }
 
-        debug!("{write_query:?}");
-
         let res = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(client.query(write_query))?;
+
+        let time_to_query = now.elapsed();
+
+        info!("Time to send query : {0:?}", time_to_query);
 
         info!("query result : {res}");
 
