@@ -151,7 +151,10 @@ impl ModbusConnexion for ModbusDevice {
     // read input registers by address
     fn read_raw_input_registers(&mut self, addr: Address, nb: Quantity) -> Result<Vec<u16>, Error> {
         debug!("read register {addr} x{nb}");
-        self.ctx.read_input_registers(addr, nb)
+        match self.ctx.read_input_registers(addr, nb) {
+            Ok(val) => Ok(val.unwrap()),
+            Err(_) => todo!(),
+        }
     }
 
     // read input registers by name
