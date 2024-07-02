@@ -83,8 +83,39 @@ impl Into<register::DataType> for DataType {
     }
 }
 
-impl From<(Vec<u16>, register::DataType)> for RegisterValue {
-    fn from((raw, kind): (Vec<u16>, register::DataType)) -> Self {
+// impl From<(Vec<u16>, register::DataType)> for RegisterValue {
+//     fn from((raw, kind): (Vec<u16>, register::DataType)) -> Self {
+//         let raw_b: Vec<u8> = raw
+//             .iter()
+//             .map(|v| v.to_be_bytes())
+//             .flatten()
+//             .rev()
+//             .collect();
+//         match kind {
+//             register::DataType::UInt16 => RegisterValue::U16(raw[0]),
+//             register::DataType::UInt32 => {
+//                 RegisterValue::U32(u32::from_le_bytes(raw_b.try_into().unwrap()))
+//             }
+//             register::DataType::UInt64 => {
+//                 RegisterValue::U64(u64::from_le_bytes(raw_b.try_into().unwrap()))
+//             }
+//             register::DataType::UInt128 => {
+//                 RegisterValue::U128(u128::from_le_bytes(raw_b.try_into().unwrap()))
+//             }
+//             register::DataType::Int32 => {
+//                 RegisterValue::S32(i32::from_le_bytes(raw_b.try_into().unwrap()))
+//             }
+//             register::DataType::Enum16 => RegisterValue::Enum16(raw[0]),
+//             register::DataType::Sized => RegisterValue::Sized(raw_b.try_into().unwrap()),
+//             register::DataType::Float32 => {
+//                 RegisterValue::Float32(f32::from_le_bytes(raw_b.try_into().unwrap()))
+//             }
+//             register::DataType::Boolean => RegisterValue::Boolean(!raw[0] == 0),
+//         }
+//     }
+// }
+impl TryFrom<(Vec<u16>, register::DataType)> for RegisterValue {
+    fn try_from((raw, kind): (Vec<u16>, register::DataType)) -> Result<Self, Self::Error> {
         let raw_b: Vec<u8> = raw
             .iter()
             .map(|v| v.to_be_bytes())
@@ -92,27 +123,37 @@ impl From<(Vec<u16>, register::DataType)> for RegisterValue {
             .rev()
             .collect();
         match kind {
-            register::DataType::UInt16 => RegisterValue::U16(raw[0]),
-            register::DataType::UInt32 => {
-                RegisterValue::U32(u32::from_le_bytes(raw_b.try_into().unwrap()))
-            }
-            register::DataType::UInt64 => {
-                RegisterValue::U64(u64::from_le_bytes(raw_b.try_into().unwrap()))
-            }
-            register::DataType::UInt128 => {
-                RegisterValue::U128(u128::from_le_bytes(raw_b.try_into().unwrap()))
-            }
-            register::DataType::Int32 => {
-                RegisterValue::S32(i32::from_le_bytes(raw_b.try_into().unwrap()))
-            }
-            register::DataType::Enum16 => RegisterValue::Enum16(raw[0]),
-            register::DataType::Sized => RegisterValue::Sized(raw_b.try_into().unwrap()),
-            register::DataType::Float32 => {
-                RegisterValue::Float32(f32::from_le_bytes(raw_b.try_into().unwrap()))
-            }
-            register::DataType::Boolean => RegisterValue::Boolean(!raw[0] == 0),
+            register::DataType::UInt16 => Ok(RegisterValue::U16(raw[0])),
+            register::DataType::UInt32 => match raw_b.try_into() {
+                Ok(res) => Ok(RegisterValue::U32(u32::from_le_bytes(res))),
+                Err(err) => Err(err),
+            },
+            register::DataType::UInt64 => match raw_b.try_into() {
+                Ok(res) => Ok(RegisterValue::U64(u64::from_le_bytes(res))),
+                Err(err) => Err(err),
+            },
+            register::DataType::UInt128 => match raw_b.try_into() {
+                Ok(res) => Ok(RegisterValue::U128(u128::from_le_bytes(res))),
+                Err(err) => Err(err),
+            },
+            register::DataType::Int32 => match raw_b.try_into() {
+                Ok(res) => Ok(RegisterValue::S32(i32::from_le_bytes(res))),
+                Err(err) => Err(err),
+            },
+            register::DataType::Enum16 => Ok(RegisterValue::Enum16(raw[0])),
+            register::DataType::Sized => match raw_b.try_into() {
+                Ok(res) => Ok(RegisterValue::Sized(res)),
+                Err(err) => Err(err),
+            },
+            register::DataType::Float32 => match raw_b.try_into() {
+                Ok(res) => Ok(RegisterValue::Float32(f32::from_le_bytes(res))),
+                Err(err) => Err(err),
+            },
+            register::DataType::Boolean => Ok(RegisterValue::Boolean(!raw[0] == 0)),
         }
     }
+
+    type Error = Vec<u8>;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -223,12 +264,20 @@ impl ModbusConnexion for ModbusDevice {
                 let read_regs_map: HashMap<String, RegisterValue> = regs
                     [reg_range_start..reg_range_end + 1]
                     .iter()
-                    .map(|v| {
+                    .filter_map(|v| {
                         let start_off = v.addr - s_reg.addr;
                         let value: Vec<u16> =
                             read_regs[start_off.into()..(start_off + v.len).into()].to_vec();
-                        let conv_value: RegisterValue = (value, v.data_type).into();
-                        (v.name.to_owned(), conv_value)
+                        match (value, v.data_type).try_into() {
+                            Ok(res) => Some((v.name.to_owned(), res)),
+                            Err(err) => {
+                                warn!(
+                                    "There was an error converting field {0} dropping it ({err:?})",
+                                    v.name
+                                );
+                                None
+                            }
+                        }
                     })
                     .collect();
 
