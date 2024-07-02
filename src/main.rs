@@ -12,6 +12,7 @@ use influxdb::Type;
 
 use modbus_device::ModbusConnexion;
 use modbus_device::ModbusDevice;
+use modbus_device::ModbusError;
 use modbus_device::RegisterValue;
 
 mod register;
@@ -131,10 +132,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         now = Instant::now();
         let register_vals = match electrolyzer.dump_input_registers() {
             Ok(vals) => vals,
-            Err(err) => {
-                error!("Error reading registers, trying again ({err})");
-                continue;
-            }
+            Err(err) => match err {
+                ModbusError::ModbusError(tokio_modbus::Error::Transport(err)) => match err.kind() {
+                    std::io::ErrorKind::BrokenPipe => {
+                        error!("Broken pipe while reading register reconnecting to device ({err})");
+                        electrolyzer.ctx = backoff::retry(ExponentialBackoff::default(), || {
+                            match modbus_device::connect(electrolyzer_address) {
+                                Ok(res) => {
+                                    info!("Reconnexion successful !");
+                                    Ok(res)
+                                }
+                                Err(err) => {
+                                    warn!("Connexion error on reconnect, re-trying ({err})");
+                                    Err(backoff::Error::transient(err))
+                                }
+                            }
+                        })?;
+                        continue;
+                    }
+                    _ => {
+                        error!("IOError reading registers, trying again ({err})");
+                        continue;
+                    }
+                },
+                err => {
+                    error!("Error reading registers, trying again ({err:?})");
+                    continue;
+                }
+            },
         };
         let time_to_read = now.elapsed();
 
