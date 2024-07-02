@@ -29,7 +29,7 @@ impl Into<Type> for RegisterValue {
             RegisterValue::Enum16(val) => val.into(),
             RegisterValue::Sized(val) => std::str::from_utf8(&val).unwrap().into(),
             RegisterValue::Float32(val) => match val.is_nan() {
-                true => "NaN".into(),
+                true => (0).into(),
                 _ => val.into(),
             },
             RegisterValue::Boolean(val) => val.into(),
