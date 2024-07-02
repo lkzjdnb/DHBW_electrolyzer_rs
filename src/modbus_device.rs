@@ -1,9 +1,10 @@
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::collections::HashMap;
+use std::error::Error;
 use std::fs::File;
 use std::net::SocketAddr;
-use std::{collections::HashMap, io::Error};
 use tokio_modbus::{
     client::sync::{self, Context, Reader},
     Address, Quantity,
@@ -20,17 +21,21 @@ pub struct ModbusDevice {
 }
 
 pub trait ModbusConnexion {
-    fn read_raw_input_registers(&mut self, addr: Address, nb: Quantity) -> Result<Vec<u16>, Error>;
+    fn read_raw_input_registers(
+        &mut self,
+        addr: Address,
+        nb: Quantity,
+    ) -> Result<Vec<u16>, Box<dyn Error>>;
     fn read_input_registers_by_name(
         &mut self,
         names: Vec<String>,
-    ) -> Result<HashMap<String, RegisterValue>, std::io::Error>;
+    ) -> Result<HashMap<String, RegisterValue>, Box<dyn Error>>;
     fn read_input_registers(
         &mut self,
         regs: Vec<Register>,
-    ) -> Result<HashMap<String, RegisterValue>, Error>;
+    ) -> Result<HashMap<String, RegisterValue>, Box<dyn Error>>;
 
-    fn dump_input_registers(&mut self) -> Result<HashMap<String, RegisterValue>, Error>;
+    fn dump_input_registers(&mut self) -> Result<HashMap<String, RegisterValue>, Box<dyn Error>>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -149,19 +154,26 @@ pub fn connect(addr: SocketAddr) -> Result<Context, std::io::Error> {
 
 impl ModbusConnexion for ModbusDevice {
     // read input registers by address
-    fn read_raw_input_registers(&mut self, addr: Address, nb: Quantity) -> Result<Vec<u16>, Error> {
+    fn read_raw_input_registers(
+        &mut self,
+        addr: Address,
+        nb: Quantity,
+    ) -> Result<Vec<u16>, Box<dyn std::error::Error>> {
         debug!("read register {addr} x{nb}");
-        match self.ctx.read_input_registers(addr, nb) {
-            Ok(val) => Ok(val.unwrap()),
-            Err(_) => todo!(),
+        let res = self.ctx.read_input_registers(addr, nb);
+        match res {
+            Ok(res) => match res {
+                Ok(res) => return Ok(res),
+                Err(err) => Err(Box::new(err)),
+            },
+            Err(err) => return Err(err.into()),
         }
     }
 
-    // read input registers by name
     fn read_input_registers_by_name(
         &mut self,
         names: Vec<String>,
-    ) -> Result<HashMap<String, RegisterValue>, std::io::Error> {
+    ) -> Result<HashMap<String, RegisterValue>, Box<dyn Error>> {
         let registers_to_read: Vec<Register> = names
             .iter()
             .filter_map(|n| match self.input_registers.get(n) {
@@ -178,7 +190,7 @@ impl ModbusConnexion for ModbusDevice {
     fn read_input_registers(
         &mut self,
         mut regs: Vec<Register>,
-    ) -> Result<HashMap<String, RegisterValue>, std::io::Error> {
+    ) -> Result<HashMap<String, RegisterValue>, Box<dyn Error>> {
         // read registers in order of address
         regs.sort_by_key(|s| s.addr);
 
@@ -232,7 +244,9 @@ impl ModbusConnexion for ModbusDevice {
         return Ok(result);
     }
 
-    fn dump_input_registers(&mut self) -> Result<HashMap<String, RegisterValue>, Error> {
+    fn dump_input_registers(
+        &mut self,
+    ) -> Result<HashMap<std::string::String, RegisterValue>, Box<dyn Error>> {
         let registers = self.input_registers.to_owned();
         let keys: Vec<String> = registers.into_keys().collect();
         self.read_input_registers_by_name(keys)
