@@ -104,37 +104,6 @@ impl Into<register::DataType> for DataType {
     }
 }
 
-// impl From<(Vec<u16>, register::DataType)> for RegisterValue {
-//     fn from((raw, kind): (Vec<u16>, register::DataType)) -> Self {
-//         let raw_b: Vec<u8> = raw
-//             .iter()
-//             .map(|v| v.to_be_bytes())
-//             .flatten()
-//             .rev()
-//             .collect();
-//         match kind {
-//             register::DataType::UInt16 => RegisterValue::U16(raw[0]),
-//             register::DataType::UInt32 => {
-//                 RegisterValue::U32(u32::from_le_bytes(raw_b.try_into().unwrap()))
-//             }
-//             register::DataType::UInt64 => {
-//                 RegisterValue::U64(u64::from_le_bytes(raw_b.try_into().unwrap()))
-//             }
-//             register::DataType::UInt128 => {
-//                 RegisterValue::U128(u128::from_le_bytes(raw_b.try_into().unwrap()))
-//             }
-//             register::DataType::Int32 => {
-//                 RegisterValue::S32(i32::from_le_bytes(raw_b.try_into().unwrap()))
-//             }
-//             register::DataType::Enum16 => RegisterValue::Enum16(raw[0]),
-//             register::DataType::Sized => RegisterValue::Sized(raw_b.try_into().unwrap()),
-//             register::DataType::Float32 => {
-//                 RegisterValue::Float32(f32::from_le_bytes(raw_b.try_into().unwrap()))
-//             }
-//             register::DataType::Boolean => RegisterValue::Boolean(!raw[0] == 0),
-//         }
-//     }
-// }
 impl TryFrom<(Vec<u16>, register::DataType)> for RegisterValue {
     fn try_from((raw, kind): (Vec<u16>, register::DataType)) -> Result<Self, Self::Error> {
         let raw_b: Vec<u8> = raw

@@ -77,7 +77,7 @@ impl Into<Type> for RegisterValue {
             RegisterValue::U128(val) => val.to_string().into(),
             RegisterValue::S32(val) => val.into(),
             RegisterValue::Enum16(val) => val.into(),
-            RegisterValue::Sized(val) => std::str::from_utf8(&val).unwrap().into(),
+            RegisterValue::Sized(val) => format!("{0:x?}", &val).into(),
             RegisterValue::Float32(val) => match val.is_nan() {
                 true => (0).into(),
                 _ => val.into(),
