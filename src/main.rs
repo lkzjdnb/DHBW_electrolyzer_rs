@@ -3,6 +3,8 @@ use log::{debug, error, info, warn};
 use core::panic;
 use std::time::Instant;
 
+use metrics::{gauge, KeyName};
+
 mod modbus_device;
 
 use std::fs::File;
@@ -22,6 +24,11 @@ use influxdb::{Client, InfluxDbWriteable, Timestamp};
 use clap::Parser;
 
 use backoff::{Error, ExponentialBackoff};
+
+use metrics_exporter_prometheus::PrometheusBuilder;
+
+use metrics_util::MetricKindMask;
+use std::time::Duration;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -88,7 +95,7 @@ struct Args {
     )]
     db_bucket: Option<String>,
 
-    #[arg(long, action, help = "Activate the Prometheus PushGateway connexion")]
+    #[arg(long, action, help = "Activate the Prometheus PushGateway connexion", requires_all(["prometheus_url"]))]
     prometheus: bool,
 }
 
@@ -102,6 +109,24 @@ impl Into<Type> for RegisterValue {
             RegisterValue::S32(val) => val.into(),
             RegisterValue::Enum16(val) => val.into(),
             RegisterValue::Sized(val) => format!("{0:x?}", &val).into(),
+            RegisterValue::Float32(val) => match val.is_nan() {
+                true => (0).into(),
+                _ => val.into(),
+            },
+            RegisterValue::Boolean(val) => val.into(),
+        }
+    }
+}
+impl Into<f64> for RegisterValue {
+    fn into(self) -> f64 {
+        match self {
+            RegisterValue::U16(val) => val.into(),
+            RegisterValue::U32(val) => val.into(),
+            RegisterValue::U64(val) => 0.0,
+            RegisterValue::U128(val) => 0.0,
+            RegisterValue::S32(val) => val.into(),
+            RegisterValue::Enum16(val) => val.into(),
+            RegisterValue::Sized(val) => 0.0,
             RegisterValue::Float32(val) => match val.is_nan() {
                 true => (0).into(),
                 _ => val.into(),
@@ -169,6 +194,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    if args.prometheus {
+        PrometheusBuilder::new()
+            .with_push_gateway(
+                args.prometheus_url.unwrap(),
+                Duration::from_secs(15),
+                None,
+                None,
+            )?
+            .idle_timeout(MetricKindMask::GAUGE, Some(Duration::from_secs(10)))
+            .install()?;
+    }
+
     loop {
         now = Instant::now();
         let register_vals = match electrolyzer.dump_input_registers() {
@@ -205,7 +242,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let time_to_read = now.elapsed();
 
-        info!("Time ro read all input registers : {0:?}", time_to_read);
+        info!("Time to read all input registers : {0:?}", time_to_read);
 
         if args.influx_db {
             now = Instant::now();
@@ -243,7 +280,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Time to send InfluxDB query : {0:?}", time_to_query);
         }
 
-        debug!("{0:?}", register_vals);
+        if args.prometheus {
+            for (name, reg) in register_vals {
+                debug!("sending {name} {reg:?}");
+                gauge!(KeyName::from_const_str(name.leak())).set::<f64>((reg).into());
+            }
+        }
+
+        // debug!("{0:?}", register_vals);
     }
 
     // return Ok(());
