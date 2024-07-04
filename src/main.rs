@@ -36,15 +36,6 @@ struct Args {
     remote: String,
 
     #[arg(
-        short,
-        long,
-        env = "INFLUXDB_TOKEN",
-        help = "The influxDB API token",
-        long_help = "InfluxDB API token, can also be defined with INFLUXDB_TOKEN environment variable"
-    )]
-    token: String,
-
-    #[arg(
         long,
         default_value = "input_registers.json",
         help = "Path to the json file containing the registers definition"
@@ -58,21 +49,47 @@ struct Args {
     )]
     holding_register_path: String,
 
+    #[arg(long, help = "Activate the InfluxDB connexion", requires_all(["token", "influxdb_url", "db_bucket"]), )]
+    influx_db: bool,
+
     #[arg(
         short,
         long,
-        default_value = "https://dhbw-influx.leserveurdansmongrenier.uk",
-        help = "URL to the database used",
-        long_help = "URL to the database (InfluxDB)"
+        required = false,
+        env = "INFLUXDB_TOKEN",
+        help = "The influxDB API token",
+        long_help = "InfluxDB API token, can also be defined with INFLUXDB_TOKEN environment variable"
     )]
-    db_url: String,
+    token: Option<String>,
+
+    #[arg(
+        short,
+        long,
+        required = false,
+        help = "InfluxDB URL",
+        long_help = "URL of the InfluxDB server"
+    )]
+    influxdb_url: Option<String>,
+    #[arg(
+        short,
+        long,
+        required = false,
+        help = "Prometheus PushGateway URL",
+        long_help = "URL of the Prometheus server"
+    )]
+    prometheus_url: Option<String>,
 
     #[arg(
         long,
+        required = false,
+        required_if_eq("influx_db", "true"),
         default_value = "electrolyzer",
         help = "Bucket in which to store the data"
     )]
-    db_bucket: String,
+    db_bucket: Option<String>,
+
+    #[arg(long, action, help = "Activate the Prometheus PushGateway connexion")]
+    prometheus: bool,
 }
 
 impl Into<Type> for RegisterValue {
@@ -100,8 +117,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut now = Instant::now();
 
     let args = Args::parse();
-
-    let token: String = args.token;
 
     let electrolyzer_input_registers_json = match File::open(&args.input_register_path) {
         Ok(file) => file,
@@ -146,7 +161,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     debug!("{0:?}", electrolyzer.input_registers);
 
-    let client = Client::new(args.db_url, args.db_bucket).with_token(token);
+    let mut influx_client: Option<influxdb::Client> = None;
+    if args.influx_db {
+        influx_client = Some(
+            Client::new(args.influxdb_url.unwrap(), args.db_bucket.unwrap())
+                .with_token(args.token.unwrap()),
+        );
+    }
 
     loop {
         now = Instant::now();
@@ -181,46 +202,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
         };
-        let holding_register_vals = electrolyzer.dump_holding_registers().unwrap();
-        info!("{holding_register_vals:?}");
 
         let time_to_read = now.elapsed();
 
         info!("Time ro read all input registers : {0:?}", time_to_read);
 
-        now = Instant::now();
-        let mut write_query =
-            Timestamp::from(chrono::offset::Local::now()).into_query("electrolyzer");
+        if args.influx_db {
+            now = Instant::now();
+            let mut write_query =
+                Timestamp::from(chrono::offset::Local::now()).into_query("electrolyzer");
 
-        for (name, reg) in &register_vals {
-            debug!("sending {name} {reg:?}");
-            write_query = write_query.add_field(name, reg);
-        }
+            for (name, reg) in &register_vals {
+                debug!("sending {name} {reg:?}");
+                write_query = write_query.add_field(name, reg);
+            }
 
-        match backoff::retry(ExponentialBackoff::default(), || {
-            match tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(client.query(&write_query))
-            {
-                Ok(res) => Ok(res),
-                Err(err) => {
-                    warn!("Could not send data to server, trying again ({err})");
-                    Err(err).map_err(Error::transient)
+            match backoff::retry(ExponentialBackoff::default(), || {
+                match tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on((influx_client.as_ref()).unwrap().query(&write_query))
+                {
+                    Ok(res) => Ok(res),
+                    Err(err) => {
+                        warn!("Could not send data to server, trying again ({err})");
+                        Err(err).map_err(Error::transient)
+                    }
                 }
-            }
-        }) {
-            Ok(res) => res,
-            Err(err) => {
-                error!("There was an error sending data, retrying {err}");
-                continue;
-            }
-        };
+            }) {
+                Ok(res) => res,
+                Err(err) => {
+                    error!("There was an error sending data, retrying {err}");
+                    continue;
+                }
+            };
 
-        let time_to_query = now.elapsed();
+            let time_to_query = now.elapsed();
 
-        info!("Time to send query : {0:?}", time_to_query);
+            info!("Time to send InfluxDB query : {0:?}", time_to_query);
+        }
 
         debug!("{0:?}", register_vals);
     }
