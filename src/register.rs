@@ -19,6 +19,7 @@ pub struct Register {
     pub addr: u16,
     pub len: u16, // in 16bits
     pub data_type: DataType,
+    pub read: bool,
 }
 
 impl Debug for Register {
@@ -28,6 +29,7 @@ impl Debug for Register {
             .field("addr", &self.addr)
             .field("len", &self.len)
             .field("data_type", &self.data_type)
+            .field("read", &self.read)
             .finish()
     }
 }

@@ -49,7 +49,14 @@ struct Args {
         default_value = "input_registers.json",
         help = "Path to the json file containing the registers definition"
     )]
-    register_path: String,
+    input_register_path: String,
+
+    #[arg(
+        long,
+        default_value = "holding_registers.json",
+        help = "Path to the json file containing the registers definition"
+    )]
+    holding_register_path: String,
 
     #[arg(
         short,
@@ -96,11 +103,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let token: String = args.token;
 
-    let electrolyzer_input_registers_json = match File::open(&args.register_path) {
+    let electrolyzer_input_registers_json = match File::open(&args.input_register_path) {
         Ok(file) => file,
         Err(err) => panic!(
-            "Could not open the file containing the registers definition : {0} ({err:?})",
-            &args.register_path
+            "Could not open the file containing the input registers definition : {0} ({err:?})",
+            &args.input_register_path
+        ),
+    };
+    let electrolyzer_holding_registers_json = match File::open(&args.holding_register_path) {
+        Ok(file) => file,
+        Err(err) => panic!(
+            "Could not open the file containing the holding registers definition : {0} ({err:?})",
+            &args.holding_register_path
         ),
     };
 
@@ -117,7 +131,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         input_registers: match modbus_device::get_defs_from_json(electrolyzer_input_registers_json)
         {
             Ok(registers) => registers,
-            Err(err) => panic!("Could not load registers definition from file ({err})"),
+            Err(err) => panic!("Could not load input registers definition from file ({err})"),
+        },
+        holding_registers: match modbus_device::get_defs_from_json(
+            electrolyzer_holding_registers_json,
+        ) {
+            Ok(registers) => registers,
+            Err(err) => panic!("Could not load holding registers definition from file ({err})"),
         },
     };
 
@@ -161,6 +181,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
         };
+        let holding_register_vals = electrolyzer.dump_holding_registers().unwrap();
+        info!("{holding_register_vals:?}");
+
         let time_to_read = now.elapsed();
 
         info!("Time ro read all input registers : {0:?}", time_to_read);

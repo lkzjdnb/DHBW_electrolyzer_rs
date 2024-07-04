@@ -1,9 +1,9 @@
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::collections::HashMap;
 use std::fs::File;
 use std::net::SocketAddr;
+use std::{collections::HashMap, hash::Hash};
 use tokio_modbus::{
     client::sync::{self, Context, Reader},
     Address, Exception, Quantity,
@@ -17,6 +17,12 @@ const MODBUS_MAX_READ_LEN: u16 = 125;
 pub struct ModbusDevice {
     pub ctx: Context,
     pub input_registers: HashMap<String, Register>,
+    pub holding_registers: HashMap<String, Register>,
+}
+
+pub enum ModBusRegisters {
+    INPUT,
+    HOLDING,
 }
 
 #[derive(Debug)]
@@ -56,7 +62,29 @@ pub trait ModbusConnexion {
         regs: Vec<Register>,
     ) -> Result<HashMap<String, RegisterValue>, ModbusError>;
 
+    fn read_register(
+        &mut self,
+        regs: Vec<Register>,
+        source: ModBusRegisters,
+    ) -> Result<HashMap<String, RegisterValue>, ModbusError>;
+
     fn dump_input_registers(&mut self) -> Result<HashMap<String, RegisterValue>, ModbusError>;
+
+    fn read_raw_holding_registers(
+        &mut self,
+        addr: Address,
+        nb: Quantity,
+    ) -> Result<Vec<u16>, ModbusError>;
+    fn read_holding_registers_by_name(
+        &mut self,
+        names: Vec<String>,
+    ) -> Result<HashMap<String, RegisterValue>, ModbusError>;
+    fn read_holding_registers(
+        &mut self,
+        regs: Vec<Register>,
+    ) -> Result<HashMap<String, RegisterValue>, ModbusError>;
+
+    fn dump_holding_registers(&mut self) -> Result<HashMap<String, RegisterValue>, ModbusError>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,7 +102,9 @@ pub enum RegisterValue {
 
 #[derive(Serialize, Deserialize)]
 enum DataType {
+    #[serde(alias = "Uint16")]
     UInt16,
+    #[serde(alias = "Uint32")]
     UInt32,
     UInt64,
     UInt128,
@@ -146,6 +176,10 @@ impl TryFrom<(Vec<u16>, register::DataType)> for RegisterValue {
     type Error = Vec<u8>;
 }
 
+fn return_true() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize)]
 struct RawRegister {
     id: u16,
@@ -153,6 +187,8 @@ struct RawRegister {
     #[serde(rename = "type")]
     type_: DataType,
     len: u16,
+    #[serde(default = "return_true")]
+    read: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -173,6 +209,7 @@ pub fn get_defs_from_json(input: File) -> Result<HashMap<String, Register>, serd
                 addr: f.id,
                 len: f.len / 16,
                 data_type: f.type_.into(),
+                read: f.read,
             },
         );
     }
@@ -218,10 +255,11 @@ impl ModbusConnexion for ModbusDevice {
         self.read_input_registers(registers_to_read)
     }
 
-    fn read_input_registers(
+    fn read_register(
         &mut self,
         mut regs: Vec<Register>,
-    ) -> Result<HashMap<std::string::String, RegisterValue>, ModbusError> {
+        source: ModBusRegisters,
+    ) -> Result<HashMap<String, RegisterValue>, ModbusError> {
         // read registers in order of address
         regs.sort_by_key(|s| s.addr);
 
@@ -247,8 +285,16 @@ impl ModbusConnexion for ModbusDevice {
                     s_reg.addr,
                     e_reg.addr + e_reg.len - s_reg.addr
                 );
-                let read_regs: Vec<u16> =
-                    self.read_raw_input_registers(s_reg.addr, e_reg.addr + e_reg.len - s_reg.addr)?;
+                let read_regs: Vec<u16> = match source {
+                    ModBusRegisters::INPUT => self.read_raw_input_registers(
+                        s_reg.addr,
+                        e_reg.addr + e_reg.len - s_reg.addr,
+                    )?,
+                    ModBusRegisters::HOLDING => self.read_raw_holding_registers(
+                        s_reg.addr,
+                        e_reg.addr + e_reg.len - s_reg.addr,
+                    )?,
+                };
 
                 // convert them to the types and make the association with the registers
                 let read_regs_map: HashMap<String, RegisterValue> = regs
@@ -283,11 +329,70 @@ impl ModbusConnexion for ModbusDevice {
         return Ok(result);
     }
 
+    fn read_input_registers(
+        &mut self,
+        regs: Vec<Register>,
+    ) -> Result<HashMap<std::string::String, RegisterValue>, ModbusError> {
+        self.read_register(regs, ModBusRegisters::INPUT)
+    }
+
     fn dump_input_registers(
         &mut self,
     ) -> Result<HashMap<std::string::String, RegisterValue>, ModbusError> {
         let registers = self.input_registers.to_owned();
         let keys: Vec<String> = registers.into_keys().collect();
         self.read_input_registers_by_name(keys)
+    }
+
+    fn read_raw_holding_registers(
+        &mut self,
+        addr: Address,
+        nb: Quantity,
+    ) -> Result<Vec<u16>, ModbusError> {
+        debug!("read register {addr} x{nb}");
+        let res = self.ctx.read_holding_registers(addr, nb);
+        match res {
+            Ok(res) => match res {
+                Ok(res) => return Ok(res),
+                Err(err) => Err(err.into()),
+            },
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    fn read_holding_registers_by_name(
+        &mut self,
+        names: Vec<String>,
+    ) -> Result<HashMap<String, RegisterValue>, ModbusError> {
+        let registers_to_read: Vec<Register> = names
+            .iter()
+            .filter_map(|n| match self.holding_registers.get(n) {
+                Some(reg) => Some(reg.to_owned()),
+                None => {
+                    warn!("Register {n} does not exist, skipping it");
+                    None
+                }
+            })
+            .collect();
+        self.read_holding_registers(registers_to_read)
+    }
+    fn read_holding_registers(
+        &mut self,
+        regs: Vec<Register>,
+    ) -> Result<HashMap<String, RegisterValue>, ModbusError> {
+        self.read_register(regs, ModBusRegisters::HOLDING)
+    }
+
+    fn dump_holding_registers(&mut self) -> Result<HashMap<String, RegisterValue>, ModbusError> {
+        let registers = self.holding_registers.to_owned();
+
+        let keys: Vec<String> = registers
+            .iter()
+            .filter_map(|v| match v.1.read {
+                true => Some(v.0.to_owned()),
+                false => None,
+            })
+            .collect();
+        self.read_holding_registers_by_name(keys)
     }
 }
