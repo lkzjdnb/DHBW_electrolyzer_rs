@@ -1,11 +1,13 @@
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::array::TryFromSliceError;
 use std::collections::HashMap;
 use std::fs::File;
 use std::net::SocketAddr;
 use tokio_modbus::{
     client::sync::{self, Context, Reader},
+    prelude::SyncWriter,
     Address, Exception, Quantity,
 };
 
@@ -30,6 +32,7 @@ pub enum ModbusError {
     Exception(Exception),
     IOerror(std::io::Error),
     ModbusError(tokio_modbus::Error),
+    TryFromSliceError(TryFromSliceError),
 }
 impl From<Exception> for ModbusError {
     fn from(value: Exception) -> Self {
@@ -46,6 +49,11 @@ impl From<tokio_modbus::Error> for ModbusError {
         ModbusError::ModbusError(value)
     }
 }
+impl From<TryFromSliceError> for ModbusError {
+    fn from(value: TryFromSliceError) -> Self {
+        ModbusError::TryFromSliceError(value)
+    }
+}
 
 pub trait ModbusConnexion {
     fn read_raw_input_registers(
@@ -53,6 +61,7 @@ pub trait ModbusConnexion {
         addr: Address,
         nb: Quantity,
     ) -> Result<Vec<u16>, ModbusError>;
+
     fn read_input_registers_by_name(
         &mut self,
         names: Vec<String>,
@@ -85,6 +94,18 @@ pub trait ModbusConnexion {
     ) -> Result<HashMap<String, RegisterValue>, ModbusError>;
 
     fn dump_holding_registers(&mut self) -> Result<HashMap<String, RegisterValue>, ModbusError>;
+
+    fn get_holding_register_by_name(&mut self, name: String) -> Option<&Register>;
+    fn write_raw_input_registers(
+        &mut self,
+        addr: Address,
+        data: Vec<u16>,
+    ) -> Result<(), ModbusError>;
+    fn write_holding_register(
+        &mut self,
+        reg: Register,
+        val: RegisterValue,
+    ) -> Result<(), ModbusError>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -174,6 +195,37 @@ impl TryFrom<(Vec<u16>, register::DataType)> for RegisterValue {
     }
 
     type Error = Vec<u8>;
+}
+
+impl TryInto<Vec<u16>> for RegisterValue {
+    type Error = TryFromSliceError;
+
+    fn try_into(self) -> Result<Vec<u16>, Self::Error> {
+        let bytearray = match self {
+            RegisterValue::U16(val) => val.to_le_bytes().to_vec(),
+            RegisterValue::U32(val) => val.to_le_bytes().to_vec(),
+            RegisterValue::U64(val) => val.to_le_bytes().to_vec(),
+            RegisterValue::U128(val) => val.to_le_bytes().to_vec(),
+            RegisterValue::S32(val) => val.to_le_bytes().to_vec(),
+            RegisterValue::Enum16(val) => val.to_le_bytes().to_vec(),
+            RegisterValue::Sized(val) => val.to_vec(),
+            RegisterValue::Float32(val) => val.to_le_bytes().to_vec(),
+            RegisterValue::Boolean(val) => match val {
+                true => 1 as u16,
+                false => 0,
+            }
+            .to_le_bytes()
+            .to_vec(),
+        };
+
+        bytearray
+            .chunks(2)
+            .map(|v| match v.try_into() {
+                Ok(arr) => Ok(u16::from_be_bytes(arr)),
+                Err(err) => Err(err),
+            })
+            .collect()
+    }
 }
 
 fn return_true() -> bool {
@@ -394,5 +446,32 @@ impl ModbusConnexion for ModbusDevice {
             })
             .collect();
         self.read_holding_registers_by_name(keys)
+    }
+
+    fn get_holding_register_by_name(&mut self, name: String) -> Option<&Register> {
+        self.holding_registers.get(&name)
+    }
+
+    fn write_raw_input_registers(
+        &mut self,
+        addr: Address,
+        data: Vec<u16>,
+    ) -> Result<(), ModbusError> {
+        let res = self.ctx.write_multiple_registers(addr, &data);
+        match res {
+            Ok(res) => match res {
+                Ok(res) => return Ok(res),
+                Err(err) => Err(err.into()),
+            },
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    fn write_holding_register(
+        &mut self,
+        reg: Register,
+        val: RegisterValue,
+    ) -> Result<(), ModbusError> {
+        self.write_raw_input_registers(reg.addr, val.try_into()?)
     }
 }

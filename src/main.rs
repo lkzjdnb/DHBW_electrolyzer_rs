@@ -122,11 +122,11 @@ impl Into<f64> for RegisterValue {
         match self {
             RegisterValue::U16(val) => val.into(),
             RegisterValue::U32(val) => val.into(),
-            RegisterValue::U64(val) => 0.0,
-            RegisterValue::U128(val) => 0.0,
+            RegisterValue::U64(val) => val as f64,
+            RegisterValue::U128(val) => val as f64,
             RegisterValue::S32(val) => val.into(),
             RegisterValue::Enum16(val) => val.into(),
-            RegisterValue::Sized(val) => 0.0,
+            RegisterValue::Sized(_) => 0 as f64,
             RegisterValue::Float32(val) => match val.is_nan() {
                 true => (0).into(),
                 _ => val.into(),
