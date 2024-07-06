@@ -5,8 +5,6 @@ use std::time::Instant;
 
 use metrics::{gauge, KeyName};
 
-mod modbus_device;
-
 use std::fs::File;
 
 use chrono;
@@ -99,9 +97,11 @@ struct Args {
     prometheus: bool,
 }
 
-impl Into<Type> for RegisterValue {
+struct LocalRegisterValue(RegisterValue);
+
+impl Into<Type> for LocalRegisterValue {
     fn into(self) -> Type {
-        match self {
+        match self.0 {
             RegisterValue::U16(val) => val.into(),
             RegisterValue::U32(val) => val.into(),
             RegisterValue::U64(val) => val.into(),
@@ -117,9 +117,9 @@ impl Into<Type> for RegisterValue {
         }
     }
 }
-impl Into<f64> for RegisterValue {
+impl Into<f64> for LocalRegisterValue {
     fn into(self) -> f64 {
-        match self {
+        match self.0 {
             RegisterValue::U16(val) => val.into(),
             RegisterValue::U32(val) => val.into(),
             RegisterValue::U64(val) => val as f64,
@@ -251,7 +251,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for (name, reg) in &register_vals {
                 debug!("sending {name} {reg:?}");
-                write_query = write_query.add_field(name, reg);
+                write_query = write_query.add_field(name, LocalRegisterValue(*reg));
             }
 
             match backoff::retry(ExponentialBackoff::default(), || {
@@ -283,7 +283,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if args.prometheus {
             for (name, reg) in register_vals {
                 debug!("sending {name} {reg:?}");
-                gauge!(KeyName::from_const_str(name.leak())).set::<f64>((reg).into());
+                gauge!(KeyName::from_const_str(name.leak()))
+                    .set::<f64>(LocalRegisterValue(reg).into());
             }
         }
 
