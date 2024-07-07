@@ -23,6 +23,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - uses: ilammy/setup-nasm@v1
     - name: Build
       run: cargo build --release
     - name: Run tests
