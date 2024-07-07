@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-modbus_device = { git = "ssh://git@github.com/lkzjdnb/modbus_device.git" }
+modbus_device = { git = "https://github.com/lkzjdnb/modbus_device.git" }
 tokio = { version = "1", features = ["full"] }
 tokio-modbus = { version = "0.13.1", default-features = false, features = ["tcp-sync"] }
 influxdb = { version = "0.7.2", features = ["derive"] }
