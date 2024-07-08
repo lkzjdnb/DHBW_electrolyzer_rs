@@ -1,3 +1,4 @@
+workspace = { members = ["dynamics"] }
 [package]
 name = "dhbw_electrolyzer_rs"
 version = "0.1.0"
