@@ -1,8 +1,6 @@
 use log::{debug, error, info, warn};
-use tokio_modbus::client::sync::Context;
 
 use core::panic;
-use std::net::SocketAddr;
 use std::time::Instant;
 
 use metrics::{gauge, KeyName};
@@ -16,8 +14,6 @@ use modbus_device::ModbusConnexion;
 use modbus_device::ModbusDevice;
 use modbus_device::ModbusError;
 use modbus_device::RegisterValue;
-
-mod register;
 
 use influxdb::{Client, InfluxDbWriteable, Timestamp};
 
@@ -140,35 +136,32 @@ impl Into<f64> for LocalRegisterValue {
 
 fn manage_modbus_error(
     err: ModbusError,
-    mut electrolyzer: ModbusDevice,
-    electrolyzer_address: SocketAddr,
+    electrolyzer: &mut ModbusDevice,
 ) -> Result<(), ModbusError> {
     match err {
-        ModbusError::ModbusError(tokio_modbus::Error::Transport(err)) => {
-            match err.kind() {
-                std::io::ErrorKind::BrokenPipe => {
-                    error!("Broken pipe while reading register reconnecting to device ({err})");
-                    electrolyzer.ctx = backoff::retry(ExponentialBackoff::default(), || {
-                        match modbus_device::connect(electrolyzer_address) {
-                            Ok(res) => {
-                                info!("Reconnexion successful !");
-                                Ok(res)
-                            }
-                            Err(err) => {
-                                warn!("Connexion error on reconnect, re-trying ({err})");
-                                Err(backoff::Error::transient(err))
-                            }
+        ModbusError::ModbusError(tokio_modbus::Error::Transport(err)) => match err.kind() {
+            std::io::ErrorKind::BrokenPipe => {
+                error!("Broken pipe while reading register reconnecting to device ({err})");
+                backoff::retry(ExponentialBackoff::default(), || {
+                    match electrolyzer.connect() {
+                        Ok(res) => {
+                            info!("Reconnexion successful !");
+                            Ok(res)
                         }
-                    })
-                    .unwrap();
-                    return Err(err.into());
-                }
-                _ => {
-                    error!("IOError reading registers, trying again ({err})");
-                    return Err(err.into());
-                }
+                        Err(err) => {
+                            warn!("Connexion error on reconnect, re-trying ({err})");
+                            Err(backoff::Error::transient(err))
+                        }
+                    }
+                })
+                .unwrap();
+                return Err(err.into());
             }
-        }
+            _ => {
+                error!("IOError reading registers, trying again ({err})");
+                return Err(err.into());
+            }
+        },
         err => {
             error!("Error reading registers, trying again ({err:?})");
             return Err(err.into());
@@ -204,6 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut electrolyzer = ModbusDevice {
+        addr: electrolyzer_address,
         ctx: match modbus_device::connect(electrolyzer_address) {
             Ok(ctx) => ctx,
             Err(err) => panic!("Error connecting to device {electrolyzer_address} ({err})"),
@@ -248,11 +242,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         now = Instant::now();
-        let register_vals = match electrolyzer.dump_input_registers() {
+        let register_read_result = electrolyzer.dump_input_registers();
+        let register_vals = match register_read_result {
             Ok(vals) => vals.clone(),
-            Err(err) => match manage_modbus_error(err, electrolyzer, electrolyzer_address) {
+            Err(err) => match manage_modbus_error(err, &mut electrolyzer) {
                 Ok(_) => panic!("Mismatched error result"),
-                Err(err) => continue,
+                Err(_) => continue,
             },
         };
 
@@ -265,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut write_query =
                 Timestamp::from(chrono::offset::Local::now()).into_query("electrolyzer");
 
-            for (name, reg) in register_vals {
+            for (name, reg) in register_vals.clone() {
                 debug!("sending {name} {reg:?}");
                 write_query = write_query.add_field(name, LocalRegisterValue(reg));
             }
@@ -303,7 +298,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if args.prometheus {
-            for (name, reg) in register_vals {
+            for (name, reg) in register_vals.clone() {
                 debug!("sending {name} {reg:?}");
                 gauge!(KeyName::from_const_str((name.clone()).leak()))
                     .set::<f64>(LocalRegisterValue(reg).into());
